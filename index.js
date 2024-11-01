@@ -29,12 +29,59 @@ const documentContent = JSON.parse(fs.readFileSync('document.json', 'utf8'));
 
 // Function to generate response using GPT-4
 async function generateResponse(question) {
-  // ... (keep the existing function implementation)
+  try {
+    const prompt = `Given the following JSON data about a company:
+
+${JSON.stringify(documentContent, null, 2)}
+
+Please answer the following question:
+${question}
+
+Provide a concise and accurate answer based only on the information given in the JSON data. If the information is not available in the data, please respond with "I'm sorry, I don't have that information in the provided data."`;
+
+    const response = await openai.createChatCompletion({
+      model: "gpt-4",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 150,
+      n: 1,
+      temperature: 0.5,
+    });
+
+    return response.data.choices[0].message.content.trim();
+  } catch (error) {
+    console.error("Error calling OpenAI API:", error);
+    return "I'm sorry, I encountered an error while processing your question. Please try again later.";
+  }
 }
 
 // Create bot
 class DocumentQABot extends ActivityHandler {
-  // ... (keep the existing class implementation)
+  constructor(conversationState) {
+    super();
+    this.conversationState = conversationState;
+
+    this.onMessage(async (context, next) => {
+      const question = context.activity.text;
+      const answer = await generateResponse(question);
+      await context.sendActivity(answer);
+      await next();
+    });
+
+    this.onMembersAdded(async (context, next) => {
+      const membersAdded = context.activity.membersAdded;
+      for (let member of membersAdded) {
+        if (member.id !== context.activity.recipient.id) {
+          await context.sendActivity("Welcome! I'm a document Q&A bot powered by GPT-4. Ask me questions about our company.");
+        }
+      }
+      await next();
+    });
+  }
+
+  async run(context) {
+    await super.run(context);
+    await this.conversationState.saveChanges(context);
+  }
 }
 
 // Create bot instance
