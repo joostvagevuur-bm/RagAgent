@@ -1,7 +1,7 @@
 const dotenv = require('dotenv');
 const path = require('path');
 const restify = require('restify');
-const { BotFrameworkAdapter, MemoryStorage, ConversationState, ActivityHandler } = require('botbuilder');
+const { BotFrameworkAdapter, CloudAdapter, ConfigurationServiceClientCredentialFactory, createBotFrameworkAuthenticationFromConfiguration, MemoryStorage, ConversationState, ActivityHandler } = require('botbuilder');
 const { Configuration, OpenAIApi } = require("openai");
 const fs = require('fs');
 
@@ -9,10 +9,16 @@ const fs = require('fs');
 dotenv.config();
 
 // Create adapter
-const adapter = new BotFrameworkAdapter({
-  appId: process.env.MicrosoftAppId,
-  appPassword: process.env.MicrosoftAppPassword
+const credentialsFactory = new ConfigurationServiceClientCredentialFactory({
+  MicrosoftAppId: process.env.MicrosoftAppId,
+  MicrosoftAppPassword: process.env.MicrosoftAppPassword,
+  MicrosoftAppType: process.env.MicrosoftAppType,
+  MicrosoftAppTenantId: process.env.MicrosoftAppTenantId
 });
+
+const botFrameworkAuthentication = createBotFrameworkAuthenticationFromConfiguration(null, credentialsFactory);
+
+const adapter = new CloudAdapter(botFrameworkAuthentication);
 
 // Create conversation state
 const memoryStorage = new MemoryStorage();
@@ -61,8 +67,10 @@ class DocumentQABot extends ActivityHandler {
     this.conversationState = conversationState;
 
     this.onMessage(async (context, next) => {
+      console.log("Received message:", context.activity.text);
       const question = context.activity.text;
       const answer = await generateResponse(question);
+      console.log("Sending answer:", answer);
       await context.sendActivity(answer);
       await next();
     });
@@ -94,8 +102,6 @@ server.listen(process.env.port || process.env.PORT || 3978, () => {
 });
 
 // Listen for incoming requests
-server.post('/api/messages', (req, res) => {
-  adapter.processActivity(req, res, async (context) => {
-    await bot.run(context);
-  });
+server.post('/api/messages', async (req, res) => {
+  await adapter.process(req, res, (context) => bot.run(context));
 });
